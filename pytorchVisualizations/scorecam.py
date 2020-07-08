@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from misc_functions import get_example_params, save_class_activation_images
+from .misc_functions import get_example_params, save_class_activation_images
 
 
 class CamExtractor():
@@ -19,27 +19,10 @@ class CamExtractor():
         self.model = model
         self.target_layer = target_layer
 
-    def forward_pass_on_convolutions(self, x):
-        """
-            Does a forward pass on convolutions, hooks the function at given layer
-        """
-        conv_output = None
-        for module_pos, module in self.model.features._modules.items():
-            x = module(x)  # Forward
-            if int(module_pos) == self.target_layer:
-                conv_output = x  # Save the convolution output on that layer
-        return conv_output, x
-
     def forward_pass(self, x):
-        """
-            Does a full forward pass on the model
-        """
-        # Forward pass on the convolutions
-        conv_output, x = self.forward_pass_on_convolutions(x)
-        x = x.view(x.size(0), -1)  # Flatten
-        # Forward pass on the classifier
-        x = self.model.classifier(x)
-        return conv_output, x
+        conv_output = self.model.activations(x)[self.target_layer]
+        y = self.model(x)['fine']
+        return conv_output, y
 
 
 class ScoreCam():
@@ -75,7 +58,11 @@ class ScoreCam():
             norm_saliency_map = (saliency_map - saliency_map.min()) / (saliency_map.max() - saliency_map.min())
             # Get the target score
             w = F.softmax(self.extractor.forward_pass(input_image*norm_saliency_map)[1],dim=1)[0][target_class]
-            cam += w.data.numpy() * target[i, :, :].data.numpy()
+            data = target[i, :, :].data
+            if torch.cuda.is_available():
+                data = data.cpu()
+                w = w.cpu()
+            cam += w.data.numpy() * data.numpy()
         cam = np.maximum(cam, 0)
         cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))  # Normalize between 0-1
         cam = np.uint8(cam * 255)  # Scale between 0-255 to visualize
