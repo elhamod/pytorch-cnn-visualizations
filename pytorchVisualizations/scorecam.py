@@ -7,6 +7,7 @@ from PIL import Image
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torchvision import transforms as torchvision_transforms
 
 from .misc_functions import get_example_params, save_class_activation_images
 
@@ -51,7 +52,7 @@ class ScoreCam():
             # Unsqueeze to 4D
             saliency_map = torch.unsqueeze(torch.unsqueeze(target[i, :, :],0),0)
             # Upsampling to input size
-            saliency_map = F.interpolate(saliency_map, size=(224, 224), mode='bilinear', align_corners=False)
+            saliency_map = F.interpolate(saliency_map, size=(input_image.shape[2], input_image.shape[3]), mode='bilinear', align_corners=False)
             if saliency_map.max() == saliency_map.min():
                 continue
             # Scale between 0-1
@@ -69,6 +70,15 @@ class ScoreCam():
         cam = np.uint8(Image.fromarray(cam).resize((input_image.shape[2],
                        input_image.shape[3]), Image.ANTIALIAS))/255
         return cam
+
+def getTransformedImage(dataset, img, augmentation, normalization):
+    augmentation2, normalization2, pad2 = dataset.toggle_image_loading(augmentation=augmentation, normalization=normalization)
+    transforms = dataset.getTransforms()
+    composedTransforms = torchvision_transforms.Compose(transforms)
+    img_clone = composedTransforms(img)
+    img_clone = img_clone.unsqueeze(0)
+    dataset.toggle_image_loading(augmentation2, normalization2, pad2)
+    return img_clone
 
 
 if __name__ == '__main__':
